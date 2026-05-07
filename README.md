@@ -22,12 +22,12 @@ The config file is created at `config/enhancedcelestialstweaks-common.toml`
 - Multiply the chance for monsters to spawn with armor and weapons and toggle if they drop the gear.
 - **Despawn Control**: prevent event-spawned mobs from despawning and/or force-despawn them after a event ends.
 - **Status Effects**: per-event effect listing with target filtering.
-- **Drop Boosts**: You can configure how harvest moons mutiply drops for any list of item tags and you can multiply rare drop rates during any event.
+- **Drop Boosts**: You can configure how harvest moons multiply drops for any list of item tags and you can multiply rare drop rates during any event.
 - **Visuals**: A large amount of config options to be able to change moon color, sky color, moon texture, fog density, fog color, sound track volume, pitch, loop, and customize the start and end messages of events.
 - Customize the night length in ticks per event.
 - **Multi-dimensions**: Have the ability to add specific lunar events to specific dimensions.
 - **Visual only** option.
-- Sleep message customization which allows you to change the text shown when a lunar even blocks sleep.
+- Sleep message customization which allows you to change the text shown when a lunar event blocks sleep.
 - The ability to disable Enhanced Celestials commands for non-operators.
 
 ### Example
@@ -37,8 +37,8 @@ The config file is created at `config/enhancedcelestialstweaks-common.toml`
 chance_multiplier = 1.5
 mob_spawn_multiplier = 2.0
 mob_category_multipliers = ["MONSTER:3.0"]
-mob_health_multipler = 1.5
-mob_damage_multipler = 1.5
+mob_health_multiplier = 1.5
+mob_damage_multiplier = 1.5
 spawn_additions = ["minecraft:phantom;80;1;2", "minecraft:wither_skeleton;40;1;1"]
 spawn_removals = ["minecraft:creeper"]
 moon_color = "ff0000"
