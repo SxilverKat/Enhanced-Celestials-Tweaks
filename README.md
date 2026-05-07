@@ -1,4 +1,5 @@
-# Enhanced Celestials Tweaks
+<img width="724" height="309" alt="minecraft_title" src="https://github.com/user-attachments/assets/5f09ccf9-e4c3-4cf0-a898-5fc8b5905504" />
+
 
 This is an unoffical add-on for Enhanced Celestials.
 
