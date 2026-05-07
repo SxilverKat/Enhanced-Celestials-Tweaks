@@ -16,9 +16,9 @@ When rejoining a world during an event, the client's `dayTime` is briefly 0 befo
 
 The config file is created at `config/enhancedcelestialstweaks-common.toml`
 
-- **Lunar Forecast**: chance multipler, minimum night between, etc..
-- **Spawn Control**: mob multipler, per-category multiplers, spawn additions, spawn removals, light-level override
-- **Mob attribute multiplers** for health, damage, movement speed, and swim speed.
+- **Lunar Forecast**: chance multiplier, minimum night between, etc..
+- **Spawn Control**: mob multiplier, per-category multipliers, spawn additions, spawn removals, light-level override
+- **Mob attribute multipliers** for health, damage, movement speed, and swim speed.
 - Multiply the chance for monsters to spawn with armor and weapons and toggle if they drop the gear.
 - **Despawn Control**: prevent event-spawned mobs from despawning and/or force-despawn them after a event ends.
 - **Status Effects**: per-event effect listing with target filtering.
