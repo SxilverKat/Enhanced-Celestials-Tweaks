@@ -9,6 +9,7 @@ import net.minecraft.core.Registry;
 import net.minecraft.resources.ResourceKey;
 import net.minecraft.world.level.Level;
 import org.spongepowered.asm.mixin.Mixin;
+import org.spongepowered.asm.mixin.Unique;
 import org.spongepowered.asm.mixin.injection.At;
 import org.spongepowered.asm.mixin.injection.Inject;
 import org.spongepowered.asm.mixin.injection.callback.CallbackInfo;
@@ -16,6 +17,7 @@ import org.spongepowered.asm.mixin.injection.callback.CallbackInfoReturnable;
 
 import java.lang.reflect.Constructor;
 import java.lang.reflect.Field;
+import java.util.List;
 import java.util.Map;
 
 @Mixin(targets = "dev.corgitaco.enhancedcelestials.lunarevent.EnhancedCelestialsLunarForecastWorldData", remap = false)
@@ -118,10 +120,24 @@ public class MixinECLunarForecast {
             remap = false
     )
     private void enhancedcelestialstweaks$preventEmptyForecastCrash(CallbackInfo ci) {
-        if (ECTweaksConfig.GENERAL.enabled.get()) {
-            ci.cancel();
+        if (!ECTweaksConfig.GENERAL.enabled.get()) return;
+        if (!enhancedcelestialstweaks$warnedEmptyForecast) {
+            try {
+                Field forecastF = this.getClass().getDeclaredField("forecast");
+                forecastF.setAccessible(true);
+                List<?> forecast = (List<?>) forecastF.get(this);
+                if (forecast != null && forecast.isEmpty()) {
+                    enhancedcelestialstweaks$warnedEmptyForecast = true;
+                    EnhancedCelestialsTweaks.LOGGER.warn("Lunar forecast is empty.");
+                }
+            } catch (Throwable ignored) {
+            }
         }
+        ci.cancel();
     }
+
+    @Unique
+    private boolean enhancedcelestialstweaks$warnedEmptyForecast = false;
 
     private static Constructor<?> findCanonicalConstructor(Class<?> srClass) {
         for (Constructor<?> c : srClass.getDeclaredConstructors()) {

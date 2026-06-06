@@ -17,11 +17,33 @@ public abstract class MixinECRefresh {
     @Unique
     private int enhancedcelestialstweaks$cooldown = 0;
 
+    @Unique
+    private Object enhancedcelestialstweaks$eventBeforeSync = null;
+
+    @Inject(method = "readFromNetwork", at = @At("HEAD"), remap = false)
+    private void enhancedcelestialstweaks$capturePreSync(CompoundTag tag, CallbackInfo ci) {
+        if (!ECTweaksConfig.GENERAL.enabled.get()) return;
+        enhancedcelestialstweaks$eventBeforeSync = enhancedcelestialstweaks$currentEventOrNull();
+    }
+
     @Inject(method = "readFromNetwork", at = @At("RETURN"), remap = false)
     private void enhancedcelestialstweaks$undoSpuriousFade(CompoundTag tag, CallbackInfo ci) {
         if (!ECTweaksConfig.GENERAL.enabled.get()) return;
+        Object before = enhancedcelestialstweaks$eventBeforeSync;
+        Object after = enhancedcelestialstweaks$currentEventOrNull();
+        if (before != null && after != null && !before.equals(after)) return;
         enhancedcelestialstweaks$primeFields();
         enhancedcelestialstweaks$cooldown = 40;
+    }
+
+    @Unique
+    private Object enhancedcelestialstweaks$currentEventOrNull() {
+        try {
+            Method m = this.getClass().getMethod("currentLunarEventHolder");
+            return m.invoke(this);
+        } catch (Throwable t) {
+            return null;
+        }
     }
 
     @Inject(method = "baseTick", at = @At("RETURN"), remap = false)

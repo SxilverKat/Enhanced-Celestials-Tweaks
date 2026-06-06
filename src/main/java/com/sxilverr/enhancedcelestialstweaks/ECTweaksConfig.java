@@ -119,19 +119,14 @@ public final class ECTweaksConfig {
         public final ForgeConfigSpec.BooleanValue logTweaks;
         public final ForgeConfigSpec.BooleanValue eventsVisualOnly;
         public final ForgeConfigSpec.BooleanValue recomputeForecastOnStart;
-        public final ForgeConfigSpec.BooleanValue disableEcCommandsForNonOps;
-        public final ForgeConfigSpec.ConfigValue<String> sleepPreventedMessage;
 
         General(ForgeConfigSpec.Builder b) {
             enabled = b.comment("Master toggle for all tweaks.").define("enabled", true);
             logTweaks = b.comment("Log applied tweaks to the console.").define("log_tweaks", false);
-            eventsVisualOnly = b.comment("Makes events a visual only").define("events_visual_only", false);
+            eventsVisualOnly = b.comment("Make all events visual-only.")
+                    .define("events_visual_only", false);
             recomputeForecastOnStart = b.comment("Rebuild the lunar forecast on server start so config changes apply to scheduled events.")
                     .define("recompute_forecast_on_start", true);
-            disableEcCommandsForNonOps = b.comment("Block Enhanced Celestials commands for non-operators.")
-                    .define("disable_ec_commands_for_non_ops", false);
-            sleepPreventedMessage = b.comment("Text shown above the hotbar when sleep is blocked by a lunar event. Supports & color codes.")
-                    .define("sleep_prevented_message", "You may not rest now because the current lunar event prevents it.");
         }
     }
 
@@ -184,12 +179,6 @@ public final class ECTweaksConfig {
         public final ForgeConfigSpec.ConfigValue<String> moonColor;
         public final ForgeConfigSpec.ConfigValue<String> skyColor;
         public final ForgeConfigSpec.ConfigValue<String> moonTexture;
-        public final ForgeConfigSpec.DoubleValue fogDensityMultiplier;
-        public final ForgeConfigSpec.ConfigValue<String> fogColor;
-        public final ForgeConfigSpec.ConfigValue<String> soundtrack;
-        public final ForgeConfigSpec.DoubleValue soundtrackVolume;
-        public final ForgeConfigSpec.DoubleValue soundtrackPitch;
-        public final ForgeConfigSpec.BooleanValue soundtrackLoop;
         public final ForgeConfigSpec.ConfigValue<String> startMessage;
         public final ForgeConfigSpec.ConfigValue<String> endMessage;
         public final ForgeConfigSpec.BooleanValue enableCropDropBoost;
@@ -200,7 +189,7 @@ public final class ECTweaksConfig {
                     .defineInRange("chance_multiplier", 1.0, 0.0, 1000.0);
             minNightsBetween = b.comment("Minimum nights between this event. -1 keeps default.")
                     .defineInRange("min_nights_between", -1, -1, Integer.MAX_VALUE);
-            mobSpawnMultiplier = b.comment("Multiplier applied to this event's mob spawn rates.")
+            mobSpawnMultiplier = b.comment("Global multiplier applied to every mob category's spawn rate during this event, including categories set by mob_category_multipliers.")
                     .defineInRange("mob_spawn_multiplier", 1.0, 0.0, 1000.0);
             blockSleeping = b.comment("Whether this event blocks sleeping.")
                     .defineEnum("block_sleeping", BoolOverride.DEFAULT);
@@ -241,7 +230,6 @@ public final class ECTweaksConfig {
                     .define("force_despawn_after_event", false);
             forceDespawnDelaySeconds = b.comment("Seconds after the event ends before forced despawn happens.")
                     .defineInRange("force_despawn_delay_seconds", 180, 0, Integer.MAX_VALUE);
-            // Format: "effect_id;amplifier;duration[;target]" where target = all (default), players, mobs, monsters
             mobEffects = b.comment("Status effects applied while the event is active. Format: \"effect_id;amplifier;duration[;target]\"")
                     .defineList("mob_effects", defaults.mobEffects(), o -> o instanceof String s && s.split(";").length >= 3);
             nightLengthTicks = b.comment("How many ticks the night lasts during this event (vanilla = 12000).")
@@ -252,18 +240,6 @@ public final class ECTweaksConfig {
                     .define("sky_color", defaults.skyColor());
             moonTexture = b.comment("Moon texture override (ResourceLocation). Empty = vanilla phases.")
                     .define("moon_texture", "");
-            fogDensityMultiplier = b.comment("Fog density multiplier during the event. 1.0 = vanilla.")
-                    .defineInRange("fog_density_multiplier", 1.0, 0.0, 100.0);
-            fogColor = b.comment("Fog hex color during the event. Empty = vanilla.")
-                    .define("fog_color", "");
-            soundtrack = b.comment("Sound event id played during the event. Empty = no music.")
-                    .define("soundtrack", defaults.soundtrack());
-            soundtrackVolume = b.comment("Soundtrack volume.")
-                    .defineInRange("soundtrack_volume", 1.0, 0.0, 10.0);
-            soundtrackPitch = b.comment("Soundtrack pitch.")
-                    .defineInRange("soundtrack_pitch", 1.0, 0.1, 10.0);
-            soundtrackLoop = b.comment("Loop the soundtrack while the event is active.")
-                    .define("soundtrack_loop", true);
             startMessage = b.comment("Message shown when the event starts. Supports & color codes. Empty = no message.")
                     .define("start_message", defaults.startMessage());
             endMessage = b.comment("Message shown when the event ends. Supports & color codes. Empty = no message.")

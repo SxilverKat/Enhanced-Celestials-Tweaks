@@ -1,6 +1,7 @@
 package com.sxilverr.enhancedcelestialstweaks.client;
 
 import com.sxilverr.enhancedcelestialstweaks.ECTweaksApplier;
+import com.sxilverr.enhancedcelestialstweaks.ECTweaksClientConfig;
 import com.sxilverr.enhancedcelestialstweaks.ECTweaksConfig;
 import com.sxilverr.enhancedcelestialstweaks.EnhancedCelestialsTweaks;
 import net.minecraft.client.Minecraft;
@@ -10,6 +11,7 @@ import net.minecraft.resources.ResourceLocation;
 import net.minecraft.sounds.SoundEvent;
 import net.minecraft.world.level.Level;
 import net.minecraftforge.api.distmarker.Dist;
+import net.minecraftforge.client.event.ClientPlayerNetworkEvent;
 import net.minecraftforge.client.event.ViewportEvent;
 import net.minecraftforge.event.TickEvent;
 import net.minecraftforge.eventbus.api.SubscribeEvent;
@@ -22,8 +24,14 @@ import java.util.Map;
 @Mod.EventBusSubscriber(modid = EnhancedCelestialsTweaks.MOD_ID, bus = Mod.EventBusSubscriber.Bus.FORGE, value = Dist.CLIENT)
 public final class ECTweaksClientHandler {
 
+    private static final int HEX_PARSE_FAILED = -1;
+
     private static ConfigurableSoundInstance currentSound;
     private static String currentSoundEvent;
+
+    private static Language lastLang;
+    private static String lastAppliedSleepMessage;
+    private static Field cachedStorageField;
 
     @SubscribeEvent
     public static void onClientTick(TickEvent.ClientTickEvent event) {
@@ -44,13 +52,14 @@ public final class ECTweaksClientHandler {
         }
 
         boolean isNewEvent = !eventPath.equals(currentSoundEvent);
-        boolean soundDead = currentSound == null || currentSound.isStopped();
+        boolean soundDead = currentSound == null || currentSound.isStopped()
+                || !mc.getSoundManager().isActive(currentSound);
 
         if (!isNewEvent && !soundDead) {
             return;
         }
 
-        ECTweaksConfig.EventTweaks tweaks = ECTweaksConfig.EVENTS.get(eventPath);
+        ECTweaksClientConfig.EventClient tweaks = ECTweaksClientConfig.EVENTS.get(eventPath);
         if (tweaks == null) {
             stopCurrent(mc);
             currentSoundEvent = eventPath;
@@ -86,6 +95,11 @@ public final class ECTweaksClientHandler {
         mc.getSoundManager().play(currentSound);
     }
 
+    @SubscribeEvent
+    public static void onLoggingOut(ClientPlayerNetworkEvent.LoggingOut event) {
+        stopCurrent(Minecraft.getInstance());
+    }
+
     private static void stopCurrent(Minecraft mc) {
         if (currentSound != null) {
             mc.getSoundManager().stop(currentSound);
@@ -101,12 +115,12 @@ public final class ECTweaksClientHandler {
         if (level == null) return;
         String currentEvent = ECTweaksApplier.getCurrentLunarEventPath(level);
         if (currentEvent == null) return;
-        ECTweaksConfig.EventTweaks tweaks = ECTweaksConfig.EVENTS.get(currentEvent);
+        ECTweaksClientConfig.EventClient tweaks = ECTweaksClientConfig.EVENTS.get(currentEvent);
         if (tweaks == null) return;
         String fogColorHex = tweaks.fogColor.get().trim();
         if (fogColorHex.isEmpty()) return;
         int color = parseHex(fogColorHex);
-        if (color < 0) return;
+        if (color == HEX_PARSE_FAILED) return;
         float r = ((color >> 16) & 0xFF) / 255f;
         float g = ((color >> 8) & 0xFF) / 255f;
         float b = (color & 0xFF) / 255f;
@@ -122,10 +136,10 @@ public final class ECTweaksClientHandler {
         if (level == null) return;
         String currentEvent = ECTweaksApplier.getCurrentLunarEventPath(level);
         if (currentEvent == null) return;
-        ECTweaksConfig.EventTweaks tweaks = ECTweaksConfig.EVENTS.get(currentEvent);
+        ECTweaksClientConfig.EventClient tweaks = ECTweaksClientConfig.EVENTS.get(currentEvent);
         if (tweaks == null) return;
         double mul = tweaks.fogDensityMultiplier.get();
-        if (mul == 1.0) return;
+        if (mul == 1.0 || !(mul > 0.0)) return;
         event.setFarPlaneDistance((float) (event.getFarPlaneDistance() / mul));
         event.setNearPlaneDistance((float) (event.getNearPlaneDistance() / mul));
         event.setCanceled(true);
@@ -134,33 +148,47 @@ public final class ECTweaksClientHandler {
     @SuppressWarnings("unchecked")
     private static void applySleepFailOverride() {
         if (!ECTweaksConfig.GENERAL.enabled.get()) return;
-        String custom = ECTweaksConfig.GENERAL.sleepPreventedMessage.get();
-        String processed = custom.replace('&', '§');
         Language lang = Language.getInstance();
         if (lang == null) return;
+        String processed = ECTweaksClientConfig.GENERAL.sleepPreventedMessage.get().replace('&', '§');
+        if (lang == lastLang && processed.equals(lastAppliedSleepMessage)) return;
         try {
-            for (Field f : lang.getClass().getDeclaredFields()) {
-                if (Map.class.isAssignableFrom(f.getType())) {
-                    f.setAccessible(true);
-                    Map<String, String> map = (Map<String, String>) f.get(lang);
-                    if (map == null) continue;
-                    if (processed.equals(map.get("enhancedcelestials.sleep.fail"))) return;
-                    Map<String, String> updated = new HashMap<>(map);
-                    updated.put("enhancedcelestials.sleep.fail", processed);
-                    f.set(lang, updated);
-                    return;
+            if (cachedStorageField == null || lang != lastLang) {
+                cachedStorageField = null;
+                for (Field f : lang.getClass().getDeclaredFields()) {
+                    if (Map.class.isAssignableFrom(f.getType())) {
+                        f.setAccessible(true);
+                        cachedStorageField = f;
+                        break;
+                    }
                 }
             }
+            if (cachedStorageField == null) return;
+            Map<String, String> map = (Map<String, String>) cachedStorageField.get(lang);
+            if (map == null) return;
+            Map<String, String> updated = new HashMap<>(map);
+            updated.put("enhancedcelestials.sleep.fail", processed);
+            cachedStorageField.set(lang, updated);
+            lastLang = lang;
+            lastAppliedSleepMessage = processed;
         } catch (Throwable ignored) {
         }
     }
 
     private static int parseHex(String input) {
         String clean = input.replace("#", "").replace("0x", "").trim();
+        if (clean.length() == 3) {
+            StringBuilder sb = new StringBuilder(6);
+            for (int i = 0; i < 3; i++) {
+                sb.append(clean.charAt(i)).append(clean.charAt(i));
+            }
+            clean = sb.toString();
+        }
         try {
-            return (int) Long.parseLong(clean, 16);
+            return (int) (Long.parseLong(clean, 16) & 0xFFFFFFL);
         } catch (NumberFormatException e) {
-            return -1;
+            EnhancedCelestialsTweaks.LOGGER.warn("Could not parse fog hex color: {}", input);
+            return HEX_PARSE_FAILED;
         }
     }
 }

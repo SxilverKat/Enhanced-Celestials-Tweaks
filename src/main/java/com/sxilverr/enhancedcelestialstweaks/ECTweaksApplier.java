@@ -2,7 +2,6 @@ package com.sxilverr.enhancedcelestialstweaks;
 
 import com.mojang.datafixers.util.Pair;
 import com.mojang.serialization.Lifecycle;
-import net.minecraft.commands.CommandSourceStack;
 import net.minecraft.core.BlockPos;
 import net.minecraft.core.MappedRegistry;
 import net.minecraft.core.Registry;
@@ -10,7 +9,6 @@ import net.minecraft.core.RegistryAccess;
 import net.minecraft.core.registries.BuiltInRegistries;
 import net.minecraft.core.registries.Registries;
 import net.minecraft.nbt.CompoundTag;
-import net.minecraft.network.chat.Component;
 import net.minecraft.network.chat.Style;
 import net.minecraft.resources.ResourceKey;
 import net.minecraft.resources.ResourceLocation;
@@ -42,7 +40,6 @@ import net.minecraft.world.item.Rarity;
 import net.minecraft.world.level.Level;
 import net.minecraft.world.level.biome.MobSpawnSettings;
 import net.minecraftforge.common.ForgeMod;
-import net.minecraftforge.event.CommandEvent;
 import net.minecraftforge.event.TickEvent;
 import net.minecraftforge.event.entity.living.LivingDropsEvent;
 import net.minecraftforge.event.entity.living.LivingEvent;
@@ -98,13 +95,19 @@ public final class ECTweaksApplier {
     private static final Map<ResourceKey<Level>, String> LAST_KNOWN_EVENT = new ConcurrentHashMap<>();
     private static final Map<String, Long> EVENT_END_TIMES = new ConcurrentHashMap<>();
     private static volatile Method LUNAR_FORECAST_METHOD;
+    private static volatile Method CURRENT_EVENT_HOLDER_METHOD;
     private static volatile boolean reflectionFailed = false;
+    private static volatile boolean loggedLunarReadError = false;
+    private static volatile boolean anyForceDespawn = false;
 
     @SubscribeEvent
     public static void onServerAboutToStart(ServerAboutToStartEvent event) {
         REMOVALS_BY_EVENT.clear();
         LAST_KNOWN_EVENT.clear();
         EVENT_END_TIMES.clear();
+        reflectionFailed = false;
+        loggedLunarReadError = false;
+        recomputeRuntimeFlags();
         if (!ECTweaksConfig.GENERAL.enabled.get()) return;
         if (!ModList.get().isLoaded(EnhancedCelestialsTweaks.EC_MOD_ID)) {
             EnhancedCelestialsTweaks.LOGGER.info("Enhanced Celestials not loaded, skipping tweaks.");
@@ -139,12 +142,27 @@ public final class ECTweaksApplier {
         EVENT_END_TIMES.clear();
     }
 
+    private static void recomputeRuntimeFlags() {
+        boolean any = false;
+        for (ECTweaksConfig.EventTweaks t : ECTweaksConfig.EVENTS.values()) {
+            if (t.forceDespawnAfterEvent.get()) {
+                any = true;
+                break;
+            }
+        }
+        anyForceDespawn = any;
+    }
+
+    private static boolean gameplayTweaksDisabled() {
+        return !ECTweaksConfig.GENERAL.enabled.get() || ECTweaksConfig.GENERAL.eventsVisualOnly.get();
+    }
+
     @SubscribeEvent
     public static void onFinalizeSpawn(MobSpawnEvent.FinalizeSpawn event) {
         Mob mob = event.getEntity();
         Level level = mob.level();
         if (level.isClientSide) return;
-        if (!ECTweaksConfig.GENERAL.enabled.get()) return;
+        if (gameplayTweaksDisabled()) return;
 
         String currentEvent = getCurrentLunarEventPath(level);
         if (currentEvent == null) return;
@@ -184,7 +202,7 @@ public final class ECTweaksApplier {
 
     @SubscribeEvent
     public static void onPositionCheck(MobSpawnEvent.PositionCheck event) {
-        if (!ECTweaksConfig.GENERAL.enabled.get()) return;
+        if (gameplayTweaksDisabled()) return;
         Mob mob = event.getEntity();
         if (mob.getType().getCategory() != MobCategory.MONSTER) return;
 
@@ -197,8 +215,8 @@ public final class ECTweaksApplier {
         int maxLight = tweaks.monsterSpawnLightLevel.get();
         if (maxLight > 0) {
             BlockPos pos = mob.blockPosition();
-            int blockLight = event.getLevel().getBrightness(net.minecraft.world.level.LightLayer.BLOCK, pos);
-            if (blockLight <= maxLight) {
+            int light = level.getMaxLocalRawBrightness(pos);
+            if (light <= maxLight && mob.checkSpawnObstruction(level)) {
                 event.setResult(Event.Result.ALLOW);
             }
         }
@@ -206,7 +224,7 @@ public final class ECTweaksApplier {
 
     @SubscribeEvent
     public static void onAllowDespawn(MobSpawnEvent.AllowDespawn event) {
-        if (!ECTweaksConfig.GENERAL.enabled.get()) return;
+        if (gameplayTweaksDisabled()) return;
         LivingEntity entity = event.getEntity();
         CompoundTag data = entity.getPersistentData();
         if (!data.getBoolean(NBT_TAG_EVENT_MOB)) return;
@@ -219,7 +237,7 @@ public final class ECTweaksApplier {
 
     @SubscribeEvent
     public static void onLivingTick(LivingEvent.LivingTickEvent event) {
-        if (!ECTweaksConfig.GENERAL.enabled.get()) return;
+        if (gameplayTweaksDisabled()) return;
         LivingEntity entity = event.getEntity();
         if (entity.tickCount % 20 != 5) return;
         Level level = entity.level();
@@ -261,7 +279,7 @@ public final class ECTweaksApplier {
 
     @SubscribeEvent
     public static void onLivingDrops(LivingDropsEvent event) {
-        if (!ECTweaksConfig.GENERAL.enabled.get()) return;
+        if (gameplayTweaksDisabled()) return;
         LivingEntity entity = event.getEntity();
         Level level = entity.level();
         if (level.isClientSide) return;
@@ -278,9 +296,25 @@ public final class ECTweaksApplier {
         java.util.List<ItemEntity> additional = new ArrayList<>();
         for (ItemEntity item : drops) {
             ItemStack stack = item.getItem();
-            if (stack.getRarity() == Rarity.COMMON) continue;
-            if (rand.nextDouble() < (mul - 1.0)) {
-                additional.add(new ItemEntity(level, item.getX(), item.getY(), item.getZ(), stack.copy()));
+            if (stack.isEmpty() || stack.getRarity() == Rarity.COMMON) continue;
+            if (!stack.isStackable() || stack.getMaxStackSize() <= 1) continue;
+
+            int whole = (int) Math.floor(mul) - 1;
+            double frac = mul - Math.floor(mul);
+            int extraUnits = whole * stack.getCount();
+            if (rand.nextDouble() < frac) extraUnits += stack.getCount();
+            if (extraUnits <= 0) continue;
+
+            int max = stack.getMaxStackSize();
+            int toExisting = Math.min(max - stack.getCount(), extraUnits);
+            if (toExisting > 0) stack.grow(toExisting);
+            int remaining = extraUnits - toExisting;
+            while (remaining > 0) {
+                int n = Math.min(max, remaining);
+                ItemStack extra = stack.copy();
+                extra.setCount(n);
+                additional.add(new ItemEntity(level, item.getX(), item.getY(), item.getZ(), extra));
+                remaining -= n;
             }
         }
         drops.addAll(additional);
@@ -289,7 +323,7 @@ public final class ECTweaksApplier {
     @SubscribeEvent
     public static void onLevelTick(TickEvent.LevelTickEvent event) {
         if (event.phase != TickEvent.Phase.END) return;
-        if (!ECTweaksConfig.GENERAL.enabled.get()) return;
+        if (gameplayTweaksDisabled()) return;
         if (!(event.level instanceof ServerLevel sLevel)) return;
 
         String currentEvent = getCurrentLunarEventPath(sLevel);
@@ -302,23 +336,9 @@ public final class ECTweaksApplier {
 
         adjustNightLength(sLevel, currentEvent);
 
-        if (sLevel.getGameTime() % 100 == 0) {
+        if (anyForceDespawn && sLevel.getGameTime() % 100 == 0) {
             forcedDespawnPass(sLevel, currentEvent);
         }
-    }
-
-    @SubscribeEvent
-    public static void onCommand(CommandEvent event) {
-        if (!ECTweaksConfig.GENERAL.disableEcCommandsForNonOps.get()) return;
-        try {
-            String input = event.getParseResults().getReader().getString().trim();
-            if (input.startsWith("/")) input = input.substring(1);
-            if (!input.startsWith("lunarforecast") && !input.startsWith("setlunarevent")) return;
-            CommandSourceStack source = event.getParseResults().getContext().getSource();
-            if (source.hasPermission(2)) return;
-            event.setCanceled(true);
-            source.sendFailure(Component.literal("Enhanced Celestials commands are restricted to operators."));
-        } catch (Throwable ignored) {}
     }
 
     private static void adjustNightLength(ServerLevel sLevel, String currentEvent) {
@@ -337,7 +357,10 @@ public final class ECTweaksApplier {
                 sLevel.setDayTime(sLevel.getDayTime() - 1);
             }
         } else if (slowdown < 1.0) {
-            long extra = (long) ((1.0 / slowdown) - 1.0);
+            double need = (1.0 / slowdown) - 1.0;
+            long whole = (long) need;
+            double frac = need - whole;
+            long extra = whole + (sLevel.random.nextDouble() < frac ? 1 : 0);
             if (extra > 0) sLevel.setDayTime(sLevel.getDayTime() + extra);
         }
     }
@@ -613,9 +636,8 @@ public final class ECTweaksApplier {
         Object oldBlockSleep = getField(msClass, oldMobSettings, "blockSleeping");
 
         Map<MobCategory, Double> newSpawnCat = new LinkedHashMap<>();
-        double mobMul = tweaks.mobSpawnMultiplier.get();
         for (Map.Entry<MobCategory, Double> e : oldSpawnCat.entrySet()) {
-            newSpawnCat.put(e.getKey(), e.getValue() * mobMul);
+            newSpawnCat.put(e.getKey(), e.getValue());
         }
         for (String entry : tweaks.mobCategoryMultipliers.get()) {
             String[] parts = entry.split(":");
@@ -626,6 +648,12 @@ public final class ECTweaksApplier {
                 newSpawnCat.put(cat, value);
             } catch (IllegalArgumentException ex) {
                 EnhancedCelestialsTweaks.LOGGER.warn("Bad category multiplier in {}: {}", path, entry);
+            }
+        }
+        double mobMul = tweaks.mobSpawnMultiplier.get();
+        if (mobMul != 1.0) {
+            for (Map.Entry<MobCategory, Double> e : newSpawnCat.entrySet()) {
+                e.setValue(e.getValue() * mobMul);
             }
         }
 
@@ -663,6 +691,13 @@ public final class ECTweaksApplier {
 
         if (!additions.isEmpty()) {
             MobSpawnSettings.Builder builder = new MobSpawnSettings.Builder();
+            if (innerSettings instanceof MobSpawnSettings oldInner) {
+                for (MobCategory cat : MobCategory.values()) {
+                    for (MobSpawnSettings.SpawnerData data : oldInner.getMobs(cat).unwrap()) {
+                        builder.addSpawn(cat, data);
+                    }
+                }
+            }
             int count = 0;
             for (String entry : additions) {
                 String[] parts = entry.split(";");
@@ -744,7 +779,8 @@ public final class ECTweaksApplier {
         Constructor<?> ctcCtor = ctcClass.getConstructor(String.class, Style.class, List.class);
         StringBuilder cleanText = new StringBuilder();
         Style style = none ? Style.EMPTY : StyleParser.parse(text, cleanText);
-        Object ctc = ctcCtor.newInstance(none ? "" : cleanText.toString(), style, List.of());
+        String key = none ? "" : cleanText.toString().replace("%", "%%");
+        Object ctc = ctcCtor.newInstance(key, style, List.of());
 
         Class<?> notifClass = Class.forName(NOTIFICATION_CLASS);
         Class<?> notifTypeClass = Class.forName(NOTIFICATION_TYPE_CLASS);
@@ -818,12 +854,23 @@ public final class ECTweaksApplier {
             Optional<?> opt = (Optional<?>) LUNAR_FORECAST_METHOD.invoke(null, level);
             if (opt.isEmpty()) return null;
             Object data = opt.get();
-            Method holderM = data.getClass().getMethod("currentLunarEventHolder");
+            Method holderM = CURRENT_EVENT_HOLDER_METHOD;
+            if (holderM == null) {
+                holderM = data.getClass().getMethod("currentLunarEventHolder");
+                CURRENT_EVENT_HOLDER_METHOD = holderM;
+            }
             net.minecraft.core.Holder<?> holder = (net.minecraft.core.Holder<?>) holderM.invoke(data);
-            return holder.unwrapKey().map(k -> k.location().getPath()).orElse(null);
-        } catch (Throwable t) {
+            String path = holder.unwrapKey().map(k -> k.location().getPath()).orElse(null);
+            return (path != null && ECTweaksConfig.EVENTS.containsKey(path)) ? path : null;
+        } catch (ClassNotFoundException | NoSuchMethodException e) {
             reflectionFailed = true;
-            EnhancedCelestialsTweaks.LOGGER.error("Failed to read current lunar event", t);
+            EnhancedCelestialsTweaks.LOGGER.error("Enhanced Celestials lunar-event API not found; disabling runtime tweaks", e);
+            return null;
+        } catch (Throwable t) {
+            if (!loggedLunarReadError) {
+                loggedLunarReadError = true;
+                EnhancedCelestialsTweaks.LOGGER.warn("Transient failure reading current lunar event.", t);
+            }
             return null;
         }
     }

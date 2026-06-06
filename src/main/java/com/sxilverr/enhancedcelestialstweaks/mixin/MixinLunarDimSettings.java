@@ -22,14 +22,14 @@ public class MixinLunarDimSettings {
     private void enhancedcelestialstweaks$dayLength(CallbackInfoReturnable<Long> cir) {
         if (!ECTweaksConfig.GENERAL.enabled.get()) return;
         long val = ECTweaksConfig.OVERWORLD.dayLength.get();
-        if (val >= 0) cir.setReturnValue(val);
+        if (val >= 1) cir.setReturnValue(val);
     }
 
     @Inject(method = "yearLengthInDays", at = @At("RETURN"), cancellable = true, remap = false)
     private void enhancedcelestialstweaks$yearLength(CallbackInfoReturnable<Long> cir) {
         if (!ECTweaksConfig.GENERAL.enabled.get()) return;
         long val = ECTweaksConfig.OVERWORLD.yearLengthInDays.get();
-        if (val >= 0) cir.setReturnValue(val);
+        if (val >= 1) cir.setReturnValue(val);
     }
 
     @Inject(method = "minDaysBetweenEvents", at = @At("RETURN"), cancellable = true, remap = false)

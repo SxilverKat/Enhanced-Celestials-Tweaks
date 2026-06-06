@@ -16,6 +16,7 @@ public final class EnhancedCelestialsTweaks {
 
     public EnhancedCelestialsTweaks() {
         ModLoadingContext.get().registerConfig(ModConfig.Type.COMMON, ECTweaksConfig.SPEC, MOD_ID + "-common.toml");
+        ModLoadingContext.get().registerConfig(ModConfig.Type.CLIENT, ECTweaksClientConfig.SPEC, MOD_ID + "-client.toml");
         MinecraftForge.EVENT_BUS.register(ECTweaksApplier.class);
     }
 }

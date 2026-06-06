@@ -16,7 +16,10 @@ When rejoining a world during an event, the client's `dayTime` is briefly 0 befo
 
 ## Configuration
 
-The config file is created at `config/enhancedcelestialstweaks-common.toml`
+Two config files are created:
+
+- `config/enhancedcelestialstweaks-common.toml` — gameplay and server-applied visuals.
+- `config/enhancedcelestialstweaks-client.toml` — client-only options.
 
 - **Lunar Forecast**: chance multiplier, minimum night between, etc..
 - **Spawn Control**: mob multiplier, per-category multipliers, spawn additions, spawn removals, light-level override
@@ -30,7 +33,6 @@ The config file is created at `config/enhancedcelestialstweaks-common.toml`
 - **Multi-dimensions**: Have the ability to add specific lunar events to specific dimensions.
 - **Visual only** option.
 - Sleep message customization which allows you to change the text shown when a lunar event blocks sleep.
-- The ability to disable Enhanced Celestials commands for non-operators.
 
 ### Example
 
