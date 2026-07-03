@@ -21,15 +21,16 @@ Two config files are created:
 - `config/enhancedcelestialstweaks-common.toml` — gameplay and server-applied visuals.
 - `config/enhancedcelestialstweaks-client.toml` — client-only options.
 
-- **Lunar Forecast**: chance multiplier, minimum night between, etc..
-- **Spawn Control**: mob multiplier, per-category multipliers, spawn additions, spawn removals, light-level override
+- **Lunar Forecast**: chance multiplier, minimum nights between, valid moon phases override, etc..
+- **Spawn Control**: mob multiplier, per-category multipliers, spawn additions and removals, light-level override, and mob-cap multiplier.
 - **Mob attribute multipliers** for health, damage, movement speed, and swim speed.
 - Multiply the chance for monsters to spawn with armor and weapons and toggle if they drop the gear.
 - **Despawn Control**: prevent event-spawned mobs from despawning and/or force-despawn them after a event ends.
 - **Status Effects**: per-event effect listing with target filtering.
-- **Drop Boosts**: You can configure how harvest moons multiply drops for any list of item tags and you can multiply rare drop rates during any event.
-- **Visuals**: A large amount of config options to be able to change moon color, sky color, moon texture, fog density, fog color, sound track volume, pitch, loop, and customize the start and end messages of events.
+- **Drop Boosts**: You can configure how harvest moons multiply drops for any list of item tags, multiply rare drop rates, and multiply mob experience drops during any event.
+- **Visuals**: A large amount of config options to be able to change moon color, sky color, moon texture, moon size, fog density, fog color, sound track volume, pitch, loop, and customize the start and end messages of events.
 - Customize the night length in ticks per event.
+- **Weather Control**: Force clear, rain, or thunder while an event is active.
 - **Multi-dimensions**: Have the ability to add specific lunar events to specific dimensions.
 - **Visual only** option.
 - Sleep message customization which allows you to change the text shown when a lunar event blocks sleep.

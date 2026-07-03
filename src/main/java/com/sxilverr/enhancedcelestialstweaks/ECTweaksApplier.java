@@ -39,9 +39,11 @@ import net.minecraft.world.item.Items;
 import net.minecraft.world.item.Rarity;
 import net.minecraft.world.level.Level;
 import net.minecraft.world.level.biome.MobSpawnSettings;
+import net.minecraft.world.level.storage.ServerLevelData;
 import net.minecraftforge.common.ForgeMod;
 import net.minecraftforge.event.TickEvent;
 import net.minecraftforge.event.entity.living.LivingDropsEvent;
+import net.minecraftforge.event.entity.living.LivingExperienceDropEvent;
 import net.minecraftforge.event.entity.living.LivingEvent;
 import net.minecraftforge.event.entity.living.MobSpawnEvent;
 import net.minecraftforge.event.server.ServerAboutToStartEvent;
@@ -94,6 +96,7 @@ public final class ECTweaksApplier {
     private static final Map<String, Set<EntityType<?>>> REMOVALS_BY_EVENT = new HashMap<>();
     private static final Map<ResourceKey<Level>, String> LAST_KNOWN_EVENT = new ConcurrentHashMap<>();
     private static final Map<String, Long> EVENT_END_TIMES = new ConcurrentHashMap<>();
+    private static final Map<ResourceKey<Level>, WeatherSnapshot> WEATHER_SNAPSHOTS = new ConcurrentHashMap<>();
     private static volatile Method LUNAR_FORECAST_METHOD;
     private static volatile Method CURRENT_EVENT_HOLDER_METHOD;
     private static volatile boolean reflectionFailed = false;
@@ -105,6 +108,7 @@ public final class ECTweaksApplier {
         REMOVALS_BY_EVENT.clear();
         LAST_KNOWN_EVENT.clear();
         EVENT_END_TIMES.clear();
+        WEATHER_SNAPSHOTS.clear();
         reflectionFailed = false;
         loggedLunarReadError = false;
         recomputeRuntimeFlags();
@@ -140,6 +144,7 @@ public final class ECTweaksApplier {
         REMOVALS_BY_EVENT.clear();
         LAST_KNOWN_EVENT.clear();
         EVENT_END_TIMES.clear();
+        WEATHER_SNAPSHOTS.clear();
     }
 
     private static void recomputeRuntimeFlags() {
@@ -192,12 +197,17 @@ public final class ECTweaksApplier {
             boostGear(mob, level.random, event.getDifficulty(), gearMul, tweaks.mobDropsEventGear.get());
         }
 
+        CompoundTag data = mob.getPersistentData();
+        data.putBoolean(NBT_TAG_EVENT_MOB, true);
+        data.putString(NBT_TAG_EVENT_ID, currentEvent);
         if (tweaks.preventMobDespawn.get() || tweaks.forceDespawnAfterEvent.get()) {
             mob.setPersistenceRequired();
-            CompoundTag data = mob.getPersistentData();
-            data.putBoolean(NBT_TAG_EVENT_MOB, true);
-            data.putString(NBT_TAG_EVENT_ID, currentEvent);
         }
+    }
+
+    private static boolean isEventSpawnedMob(LivingEntity entity, String currentEvent) {
+        CompoundTag data = entity.getPersistentData();
+        return data.getBoolean(NBT_TAG_EVENT_MOB) && currentEvent.equals(data.getString(NBT_TAG_EVENT_ID));
     }
 
     @SubscribeEvent
@@ -290,6 +300,7 @@ public final class ECTweaksApplier {
         if (tweaks == null) return;
         double mul = tweaks.rareDropMultiplier.get();
         if (mul <= 1.0) return;
+        if (tweaks.rareDropOnlyEventMobs.get() && !isEventSpawnedMob(entity, currentEvent)) return;
 
         RandomSource rand = level.random;
         java.util.Collection<ItemEntity> drops = event.getDrops();
@@ -321,6 +332,25 @@ public final class ECTweaksApplier {
     }
 
     @SubscribeEvent
+    public static void onLivingExperienceDrop(LivingExperienceDropEvent event) {
+        if (gameplayTweaksDisabled()) return;
+        LivingEntity entity = event.getEntity();
+        Level level = entity.level();
+        if (level.isClientSide) return;
+
+        String currentEvent = getCurrentLunarEventPath(level);
+        if (currentEvent == null) return;
+        ECTweaksConfig.EventTweaks tweaks = ECTweaksConfig.EVENTS.get(currentEvent);
+        if (tweaks == null) return;
+        double mul = tweaks.xpDropMultiplier.get();
+        if (mul == 1.0) return;
+        if (tweaks.xpOnlyEventMobs.get() && !isEventSpawnedMob(entity, currentEvent)) return;
+        int base = event.getDroppedExperience();
+        if (base <= 0) return;
+        event.setDroppedExperience((int) Math.round(base * mul));
+    }
+
+    @SubscribeEvent
     public static void onLevelTick(TickEvent.LevelTickEvent event) {
         if (event.phase != TickEvent.Phase.END) return;
         if (gameplayTweaksDisabled()) return;
@@ -328,18 +358,105 @@ public final class ECTweaksApplier {
 
         String currentEvent = getCurrentLunarEventPath(sLevel);
         ResourceKey<Level> dimKey = sLevel.dimension();
+        String cur = currentEvent == null ? "" : currentEvent;
         String last = LAST_KNOWN_EVENT.get(dimKey);
-        if (last != null && !last.isEmpty() && !last.equals(currentEvent == null ? "" : currentEvent)) {
-            EVENT_END_TIMES.put(last, sLevel.getGameTime());
+        if (last == null) last = "";
+        if (!last.equals(cur)) {
+            if (!last.isEmpty()) {
+                EVENT_END_TIMES.put(last, sLevel.getGameTime());
+                onWeatherEventEnd(sLevel, dimKey, last);
+            }
+            if (!cur.isEmpty()) {
+                onWeatherEventStart(sLevel, dimKey, cur);
+            }
         }
-        LAST_KNOWN_EVENT.put(dimKey, currentEvent == null ? "" : currentEvent);
+        LAST_KNOWN_EVENT.put(dimKey, cur);
 
         adjustNightLength(sLevel, currentEvent);
+        applyWeather(sLevel, currentEvent);
 
         if (anyForceDespawn && sLevel.getGameTime() % 100 == 0) {
             forcedDespawnPass(sLevel, currentEvent);
         }
     }
+
+    private static void applyWeather(ServerLevel sLevel, String currentEvent) {
+        if (currentEvent == null) return;
+        ECTweaksConfig.EventTweaks tweaks = ECTweaksConfig.EVENTS.get(currentEvent);
+        if (tweaks == null) return;
+        WeatherOverride weather = tweaks.weatherOverride.get();
+        if (weather == WeatherOverride.DEFAULT) return;
+        if (!sLevel.dimensionType().hasSkyLight() || sLevel.dimensionType().hasCeiling()) return;
+
+        long dayTime = sLevel.getDayTime() % 24000L;
+        boolean nightWindow = dayTime >= 13000L && dayTime < 23000L;
+        boolean rain = nightWindow && (weather == WeatherOverride.RAIN || weather == WeatherOverride.THUNDER);
+        boolean thunder = nightWindow && weather == WeatherOverride.THUNDER;
+        if (sLevel.isRaining() == rain && sLevel.isThundering() == thunder) return;
+        sLevel.setWeatherParameters(rain ? 0 : 6000, rain ? 6000 : 0, rain, thunder);
+    }
+
+    private static volatile double spawnContextCapMultiplier = 1.0;
+
+    public static void beginSpawnContext(ServerLevel level) {
+        spawnContextCapMultiplier = computeMobCapMultiplier(level);
+    }
+
+    public static void endSpawnContext() {
+        spawnContextCapMultiplier = 1.0;
+    }
+
+    public static double contextMobCapMultiplier() {
+        return spawnContextCapMultiplier;
+    }
+
+    private static double computeMobCapMultiplier(ServerLevel level) {
+        if (gameplayTweaksDisabled()) return 1.0;
+        String currentEvent = LAST_KNOWN_EVENT.get(level.dimension());
+        if (currentEvent == null || currentEvent.isEmpty()) return 1.0;
+        ECTweaksConfig.EventTweaks tweaks = ECTweaksConfig.EVENTS.get(currentEvent);
+        if (tweaks == null) return 1.0;
+        return tweaks.mobCapMultiplier.get();
+    }
+
+    public static boolean activeEventForcesPrecipitation() {
+        for (String eventPath : LAST_KNOWN_EVENT.values()) {
+            if (eventPath == null || eventPath.isEmpty()) continue;
+            ECTweaksConfig.EventTweaks tweaks = ECTweaksConfig.EVENTS.get(eventPath);
+            if (tweaks == null) continue;
+            WeatherOverride weather = tweaks.weatherOverride.get();
+            if (weather == WeatherOverride.RAIN || weather == WeatherOverride.THUNDER) return true;
+        }
+        return false;
+    }
+
+    private static void onWeatherEventStart(ServerLevel sLevel, ResourceKey<Level> dimKey, String eventPath) {
+        ECTweaksConfig.EventTweaks tweaks = ECTweaksConfig.EVENTS.get(eventPath);
+        if (tweaks == null || tweaks.weatherOverride.get() == WeatherOverride.DEFAULT) return;
+        if (!sLevel.dimensionType().hasSkyLight() || sLevel.dimensionType().hasCeiling()) return;
+        if (sLevel.getLevelData() instanceof ServerLevelData data) {
+            WEATHER_SNAPSHOTS.put(dimKey, new WeatherSnapshot(
+                    data.isRaining(), data.getRainTime(),
+                    data.isThundering(), data.getThunderTime(),
+                    data.getClearWeatherTime()));
+        }
+    }
+
+    private static void onWeatherEventEnd(ServerLevel sLevel, ResourceKey<Level> dimKey, String eventPath) {
+        WeatherSnapshot snap = WEATHER_SNAPSHOTS.remove(dimKey);
+        if (snap == null) return;
+        ECTweaksConfig.EventTweaks tweaks = ECTweaksConfig.EVENTS.get(eventPath);
+        if (tweaks == null || !tweaks.restoreWeatherAfterEvent.get()) return;
+        if (sLevel.getLevelData() instanceof ServerLevelData data) {
+            data.setClearWeatherTime(snap.clearTime());
+            data.setRaining(snap.raining());
+            data.setRainTime(snap.rainTime());
+            data.setThundering(snap.thundering());
+            data.setThunderTime(snap.thunderTime());
+        }
+    }
+
+    private record WeatherSnapshot(boolean raining, int rainTime, boolean thundering, int thunderTime, int clearTime) {}
 
     private static void adjustNightLength(ServerLevel sLevel, String currentEvent) {
         if (currentEvent == null) return;
@@ -702,26 +819,56 @@ public final class ECTweaksApplier {
             for (String entry : additions) {
                 String[] parts = entry.split(";");
                 if (parts.length != 4) continue;
-                ResourceLocation id = ResourceLocation.tryParse(parts[0].trim());
-                if (id == null) continue;
-                EntityType<?> type = ForgeRegistries.ENTITY_TYPES.getValue(id);
-                if (type == null) {
-                    EnhancedCelestialsTweaks.LOGGER.warn("Unknown entity in {} spawn_additions: {}", path, parts[0]);
-                    continue;
-                }
+                int weight;
+                int min;
+                int max;
                 try {
-                    int weight = Integer.parseInt(parts[1].trim());
-                    int min = Integer.parseInt(parts[2].trim());
-                    int max = Integer.parseInt(parts[3].trim());
-                    builder.addSpawn(type.getCategory(), new MobSpawnSettings.SpawnerData(type, weight, min, max));
-                    count++;
+                    weight = Integer.parseInt(parts[1].trim());
+                    min = Integer.parseInt(parts[2].trim());
+                    max = Integer.parseInt(parts[3].trim());
                 } catch (NumberFormatException e) {
                     EnhancedCelestialsTweaks.LOGGER.warn("Bad number in {} spawn_additions: {}", path, entry);
+                    continue;
+                }
+                for (EntityType<?> type : resolveSpawnTargets(parts[0].trim(), path, "spawn_additions")) {
+                    builder.addSpawn(type.getCategory(), new MobSpawnSettings.SpawnerData(type, weight, min, max));
+                    count++;
                 }
             }
             if (count > 0) innerSettings = builder.build();
         }
         return constructRecord(spawnInfoClass, 4, useBiomeVal, forceSurfaceVal, slimesVal, innerSettings);
+    }
+
+    private static List<EntityType<?>> resolveSpawnTargets(String spec, String path, String field) {
+        List<EntityType<?>> types = new ArrayList<>();
+        if (spec.startsWith("#")) {
+            ResourceLocation tagId = ResourceLocation.tryParse(spec.substring(1).trim());
+            if (tagId != null) {
+                var tagManager = ForgeRegistries.ENTITY_TYPES.tags();
+                if (tagManager != null) {
+                    for (EntityType<?> type : tagManager.getTag(TagKey.create(Registries.ENTITY_TYPE, tagId))) {
+                        types.add(type);
+                    }
+                }
+            }
+            if (types.isEmpty()) EnhancedCelestialsTweaks.LOGGER.warn("Empty or unknown entity tag in {} {}: {}", path, field, spec);
+        } else if (spec.startsWith("@")) {
+            String modId = spec.substring(1).trim();
+            for (EntityType<?> type : ForgeRegistries.ENTITY_TYPES.getValues()) {
+                ResourceLocation key = ForgeRegistries.ENTITY_TYPES.getKey(type);
+                if (key != null && key.getNamespace().equals(modId) && type.getCategory() != MobCategory.MISC) {
+                    types.add(type);
+                }
+            }
+            if (types.isEmpty()) EnhancedCelestialsTweaks.LOGGER.warn("No mobs found for mod in {} {}: {}", path, field, spec);
+        } else {
+            ResourceLocation id = ResourceLocation.tryParse(spec);
+            EntityType<?> type = id == null ? null : ForgeRegistries.ENTITY_TYPES.getValue(id);
+            if (type == null) EnhancedCelestialsTweaks.LOGGER.warn("Unknown entity in {} {}: {}", path, field, spec);
+            else types.add(type);
+        }
+        return types;
     }
 
     private static Object buildNeutralMobSettings(Object oldMobSettings) throws Exception {
@@ -737,6 +884,7 @@ public final class ECTweaksApplier {
         Class<?> clientSettingsClass = oldClientSettings.getClass();
         Object oldColorSettings = getField(clientSettingsClass, oldClientSettings, "colorSettings");
         float moonSize = field(clientSettingsClass, "moonSize").getFloat(oldClientSettings);
+        float newMoonSize = (float) (moonSize * tweaks.moonSizeMultiplier.get());
         Object moonTexture = getField(clientSettingsClass, oldClientSettings, "moonTextureLocation");
 
         Class<?> csClass = oldColorSettings.getClass();
@@ -758,7 +906,7 @@ public final class ECTweaksApplier {
             if (parsed != null) newMoonTexture = parsed;
         }
 
-        return constructRecord(clientSettingsClass, 4, newColorSettings, moonSize, newMoonTexture, (SoundEvent) null);
+        return constructRecord(clientSettingsClass, 4, newColorSettings, newMoonSize, newMoonTexture, (SoundEvent) null);
     }
 
     private static Object buildNewTextComponents(Object oldTextComponents, ECTweaksConfig.EventTweaks tweaks) throws Exception {
@@ -830,14 +978,7 @@ public final class ECTweaksApplier {
         if (removals.isEmpty()) return;
         Set<EntityType<?>> set = new HashSet<>();
         for (String s : removals) {
-            ResourceLocation id = ResourceLocation.tryParse(s.trim());
-            if (id == null) continue;
-            EntityType<?> type = ForgeRegistries.ENTITY_TYPES.getValue(id);
-            if (type == null) {
-                EnhancedCelestialsTweaks.LOGGER.warn("Unknown entity in {} spawn_removals: {}", path, s);
-                continue;
-            }
-            set.add(type);
+            set.addAll(resolveSpawnTargets(s.trim(), path, "spawn_removals"));
         }
         if (!set.isEmpty()) {
             REMOVALS_BY_EVENT.put(path, set);

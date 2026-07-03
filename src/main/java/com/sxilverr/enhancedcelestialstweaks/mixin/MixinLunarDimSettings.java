@@ -1,6 +1,7 @@
 package com.sxilverr.enhancedcelestialstweaks.mixin;
 
 import com.sxilverr.enhancedcelestialstweaks.BoolOverride;
+import com.sxilverr.enhancedcelestialstweaks.ECTweaksApplier;
 import com.sxilverr.enhancedcelestialstweaks.ECTweaksConfig;
 import org.spongepowered.asm.mixin.Mixin;
 import org.spongepowered.asm.mixin.injection.At;
@@ -16,6 +17,7 @@ public class MixinLunarDimSettings {
         BoolOverride o = ECTweaksConfig.OVERWORLD.requireClearSkies.get();
         if (o == BoolOverride.TRUE) cir.setReturnValue(Boolean.TRUE);
         else if (o == BoolOverride.FALSE) cir.setReturnValue(Boolean.FALSE);
+        if (ECTweaksApplier.activeEventForcesPrecipitation()) cir.setReturnValue(Boolean.FALSE);
     }
 
     @Inject(method = "dayLength", at = @At("RETURN"), cancellable = true, remap = false)

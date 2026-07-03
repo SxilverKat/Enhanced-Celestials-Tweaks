@@ -7,7 +7,9 @@
   "mixins": [
     "MixinECLunarForecast",
     "MixinLunarDimSettings",
-    "MixinECRefresh"
+    "MixinECRefresh",
+    "MixinNaturalSpawner",
+    "MixinNaturalSpawnerState"
   ],
   "client": [],
   "server": [],

@@ -154,11 +154,15 @@ public final class ECTweaksConfig {
     public static final class EventTweaks {
         public final ForgeConfigSpec.DoubleValue chanceMultiplier;
         public final ForgeConfigSpec.IntValue minNightsBetween;
+        public final ForgeConfigSpec.ConfigValue<List<? extends String>> validMoonPhases;
         public final ForgeConfigSpec.DoubleValue mobSpawnMultiplier;
+        public final ForgeConfigSpec.DoubleValue mobCapMultiplier;
         public final ForgeConfigSpec.EnumValue<BoolOverride> blockSleeping;
         public final ForgeConfigSpec.EnumValue<BoolOverride> useBiomeSpawnSettings;
         public final ForgeConfigSpec.EnumValue<BoolOverride> forceSurfaceSpawning;
         public final ForgeConfigSpec.EnumValue<BoolOverride> slimesSpawnEverywhere;
+        public final ForgeConfigSpec.EnumValue<WeatherOverride> weatherOverride;
+        public final ForgeConfigSpec.BooleanValue restoreWeatherAfterEvent;
         public final ForgeConfigSpec.ConfigValue<List<? extends String>> mobCategoryMultipliers;
         public final ForgeConfigSpec.ConfigValue<List<? extends String>> spawnAdditions;
         public final ForgeConfigSpec.ConfigValue<List<? extends String>> spawnRemovals;
@@ -167,6 +171,9 @@ public final class ECTweaksConfig {
         public final ForgeConfigSpec.DoubleValue mobGearChanceMultiplier;
         public final ForgeConfigSpec.BooleanValue mobDropsEventGear;
         public final ForgeConfigSpec.DoubleValue rareDropMultiplier;
+        public final ForgeConfigSpec.BooleanValue rareDropOnlyEventMobs;
+        public final ForgeConfigSpec.DoubleValue xpDropMultiplier;
+        public final ForgeConfigSpec.BooleanValue xpOnlyEventMobs;
         public final ForgeConfigSpec.DoubleValue mobHealthMultiplier;
         public final ForgeConfigSpec.DoubleValue mobDamageMultiplier;
         public final ForgeConfigSpec.DoubleValue mobSpeedMultiplier;
@@ -179,6 +186,7 @@ public final class ECTweaksConfig {
         public final ForgeConfigSpec.ConfigValue<String> moonColor;
         public final ForgeConfigSpec.ConfigValue<String> skyColor;
         public final ForgeConfigSpec.ConfigValue<String> moonTexture;
+        public final ForgeConfigSpec.DoubleValue moonSizeMultiplier;
         public final ForgeConfigSpec.ConfigValue<String> startMessage;
         public final ForgeConfigSpec.ConfigValue<String> endMessage;
         public final ForgeConfigSpec.BooleanValue enableCropDropBoost;
@@ -189,8 +197,12 @@ public final class ECTweaksConfig {
                     .defineInRange("chance_multiplier", 1.0, 0.0, 1000.0);
             minNightsBetween = b.comment("Minimum nights between this event. -1 keeps default.")
                     .defineInRange("min_nights_between", -1, -1, Integer.MAX_VALUE);
+            validMoonPhases = b.comment("Moon phases (0-7) this event can occur on. Empty keeps default.")
+                    .defineList("valid_moon_phases", List.of(), o -> o instanceof String s && s.trim().matches("[0-7]"));
             mobSpawnMultiplier = b.comment("Global multiplier applied to every mob category's spawn rate during this event, including categories set by mob_category_multipliers.")
                     .defineInRange("mob_spawn_multiplier", 1.0, 0.0, 1000.0);
+            mobCapMultiplier = b.comment("Multiplier on the mob-spawn cap during this event. 1.0 = vanilla. -1 = no cap, mobs keep spawning.")
+                    .defineInRange("mob_cap_multiplier", 1.0, -1.0, 10000.0);
             blockSleeping = b.comment("Whether this event blocks sleeping.")
                     .defineEnum("block_sleeping", BoolOverride.DEFAULT);
             useBiomeSpawnSettings = b.comment("Use the biome's normal spawn list during this event.")
@@ -199,12 +211,16 @@ public final class ECTweaksConfig {
                     .defineEnum("force_surface_spawning", BoolOverride.DEFAULT);
             slimesSpawnEverywhere = b.comment("Allow slimes to spawn anywhere during this event.")
                     .defineEnum("slimes_spawn_everywhere", BoolOverride.DEFAULT);
+            weatherOverride = b.comment("Force weather while this event is active. DEFAULT keeps vanilla weather.")
+                    .defineEnum("weather_override", WeatherOverride.DEFAULT);
+            restoreWeatherAfterEvent = b.comment("Allow vanilla weather to return after the event ends.")
+                    .define("restore_weather_after_event", true);
             // MONSTER, CREATURE, AMBIENT, AXOLOTLS, UNDERGROUND_WATER_CREATURE, WATER_CREATURE, WATER_AMBIENT, MISC
             mobCategoryMultipliers = b.comment("Per-category spawn multipliers. Format: \"CATEGORY:value\"")
                     .defineList("mob_category_multipliers", defaults.mobCategoryMultipliers(), o -> o instanceof String s && s.split(":").length == 2);
-            spawnAdditions = b.comment("Mobs to add during this event. Format: \"entity_id;weight;min;max\".")
+            spawnAdditions = b.comment("Mobs to add during this event. Format: \"target;weight;min;max\". target = entity id, #entity_tag, or @modid (all of a mod's mobs).")
                     .defineList("spawn_additions", List.of(), o -> o instanceof String s && s.split(";").length == 4);
-            spawnRemovals = b.comment("Entity ids to block from spawning during this event.")
+            spawnRemovals = b.comment("Entities blocked from spawning during this event. Each entry = entity id, #entity_tag, or @modid.")
                     .defineList("spawn_removals", List.of(), o -> o instanceof String);
             addedDimensions = b.comment("Dimensions to add this event to. Format: \"namespace:dimension_id\". Uses overworld settings as template.")
                     .defineList("added_dimensions", List.of(), o -> o instanceof String);
@@ -216,6 +232,12 @@ public final class ECTweaksConfig {
                     .define("mob_drops_event_gear", false);
             rareDropMultiplier = b.comment("Chance multiplier for non-common drops (uncommon, rare, epic) during this event.")
                     .defineInRange("rare_drop_multiplier", 1.0, 1.0, 100.0);
+            rareDropOnlyEventMobs = b.comment("Only mobs spawned by the event are affected by rare_drop_multiplier.")
+                    .define("rare_drop_only_event_mobs", true);
+            xpDropMultiplier = b.comment("Multiplier on experience dropped by mobs killed during this event.")
+                    .defineInRange("xp_drop_multiplier", 1.0, 0.0, 1000.0);
+            xpOnlyEventMobs = b.comment("Only mobs spawned by the event are affected by xp_drop_multiplier.")
+                    .define("xp_only_event_mobs", true);
             mobHealthMultiplier = b.comment("Multiplier on max health for mobs spawned during this event.")
                     .defineInRange("mob_health_multiplier", 1.0, 0.01, 1000.0);
             mobDamageMultiplier = b.comment("Multiplier on attack damage for mobs spawned during this event.")
@@ -240,6 +262,8 @@ public final class ECTweaksConfig {
                     .define("sky_color", defaults.skyColor());
             moonTexture = b.comment("Moon texture override (ResourceLocation). Empty = vanilla phases.")
                     .define("moon_texture", "");
+            moonSizeMultiplier = b.comment("Multiplier on the moon's rendered size during this event. 1.0 = default.")
+                    .defineInRange("moon_size_multiplier", 1.0, 0.01, 100.0);
             startMessage = b.comment("Message shown when the event starts. Supports & color codes. Empty = no message.")
                     .define("start_message", defaults.startMessage());
             endMessage = b.comment("Message shown when the event ends. Supports & color codes. Empty = no message.")

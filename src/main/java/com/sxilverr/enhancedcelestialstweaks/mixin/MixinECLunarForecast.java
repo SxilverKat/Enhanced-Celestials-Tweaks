@@ -65,8 +65,9 @@ public class MixinECLunarForecast {
 
                 double mul = tweaks.chanceMultiplier.get();
                 int minNights = tweaks.minNightsBetween.get();
+                List<? extends String> phaseOverride = tweaks.validMoonPhases.get();
 
-                if (mul == 1.0 && minNights < 0) {
+                if (mul == 1.0 && minNights < 0 && phaseOverride.isEmpty()) {
                     modified.put(holder, spawnReqs);
                     continue;
                 }
@@ -81,7 +82,19 @@ public class MixinECLunarForecast {
 
                 double oldChance = chanceF.getDouble(spawnReqs);
                 int oldMin = minF.getInt(spawnReqs);
-                Object phases = phasesF.get(spawnReqs);
+                Object phases;
+                if (!phaseOverride.isEmpty()) {
+                    IntArraySet set = new IntArraySet();
+                    for (String s : phaseOverride) {
+                        try {
+                            int p = Integer.parseInt(s.trim());
+                            if (p >= 0 && p <= 7) set.add(p);
+                        } catch (NumberFormatException ignored) {}
+                    }
+                    phases = set.isEmpty() ? phasesF.get(spawnReqs) : set;
+                } else {
+                    phases = phasesF.get(spawnReqs);
+                }
 
                 double newChance = mul != 1.0 ? oldChance * mul : oldChance;
                 int newMin = minNights >= 0 ? minNights : oldMin;
@@ -103,7 +116,7 @@ public class MixinECLunarForecast {
                 modified.put(holder, newReqs);
 
                 if (log) {
-                    EnhancedCelestialsTweaks.LOGGER.info("Mixin tweaked {}: chance={} minNights={}", path, newChance, newMin);
+                    EnhancedCelestialsTweaks.LOGGER.info("Mixin tweaked {}: chance={} minNights={} phases={}", path, newChance, newMin, phases);
                 }
             }
 
