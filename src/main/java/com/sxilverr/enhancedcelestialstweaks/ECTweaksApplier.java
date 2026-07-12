@@ -216,7 +216,7 @@ public final class ECTweaksApplier {
         Mob mob = event.getEntity();
         if (mob.getType().getCategory() != MobCategory.MONSTER) return;
 
-        Level level = (Level) event.getLevel();
+        if (!(event.getLevel() instanceof ServerLevel level)) return;
         String currentEvent = getCurrentLunarEventPath(level);
         if (currentEvent == null) return;
         ECTweaksConfig.EventTweaks tweaks = ECTweaksConfig.EVENTS.get(currentEvent);
