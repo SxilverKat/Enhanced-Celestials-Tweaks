@@ -1,0 +1,40 @@
+modLoader = "javafml"
+loaderVersion = "[1,)"
+license = "MIT"
+issueTrackerURL = "https://www.curseforge.com/minecraft/mc-mods/enhanced-celestials-tweaks"
+
+[[mods]]
+modId = "${id}"
+version = "${version}"
+displayName = "${name}"
+displayURL = "https://www.curseforge.com/minecraft/mc-mods/enhanced-celestials-tweaks"
+logoFile = "icon.png"
+authors = "Sxilverr"
+description = '''Adds config options for the Enhanced Celestials mod.'''
+
+[[mixins]]
+config = "enhancedcelestialstweaks-common.mixins.json"
+
+[[mixins]]
+config = "enhancedcelestialstweaks-neoforge.mixins.json"
+
+[[dependencies.${id}]]
+modId = "neoforge"
+type = "required"
+versionRange = "[21.1,21.2)"
+ordering = "NONE"
+side = "BOTH"
+
+[[dependencies.${id}]]
+modId = "minecraft"
+type = "required"
+versionRange = "${minecraft}"
+ordering = "NONE"
+side = "BOTH"
+
+[[dependencies.${id}]]
+modId = "enhancedcelestials"
+type = "required"
+versionRange = "[6.0,7)"
+ordering = "AFTER"
+side = "BOTH"

@@ -1,0 +1,14 @@
+{
+  "required": true,
+  "minVersion": "0.8.5",
+  "package": "com.sxilverr.enhancedcelestialstweaks.mixin",
+  "compatibilityLevel": "JAVA_21",
+  "mixins": [
+    "MixinECLunarForecast",
+    "MixinLunarDimSettings",
+    "MixinECRefresh"
+  ],
+  "injectors": {
+    "defaultRequire": 1
+  }
+}
