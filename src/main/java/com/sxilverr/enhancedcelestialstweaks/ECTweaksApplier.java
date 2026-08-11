@@ -66,8 +66,10 @@ public final class ECTweaksApplier {
 
     private static final Map<String, Set<EntityType<?>>> REMOVALS_BY_EVENT = new HashMap<>();
     private static final Map<ResourceKey<Level>, String> LAST_KNOWN_EVENT = new ConcurrentHashMap<>();
-    private static final Map<String, Long> EVENT_END_TIMES = new ConcurrentHashMap<>();
+    private static final Map<ResourceKey<Level>, Map<String, Long>> EVENT_END_TIMES = new ConcurrentHashMap<>();
     private static final Map<ResourceKey<Level>, WeatherSnapshot> WEATHER_SNAPSHOTS = new ConcurrentHashMap<>();
+    private static final Set<ResourceKey<Level>> OVERWORLD_LINKED_DIMS = ConcurrentHashMap.newKeySet();
+    private static volatile Object overworldDimSettings;
     private static volatile Method LUNAR_FORECAST_METHOD;
     private static volatile Method CURRENT_EVENT_HOLDER_METHOD;
     private static volatile boolean reflectionFailed = false;
@@ -79,6 +81,7 @@ public final class ECTweaksApplier {
         LAST_KNOWN_EVENT.clear();
         EVENT_END_TIMES.clear();
         WEATHER_SNAPSHOTS.clear();
+        overworldDimSettings = null;
         reflectionFailed = false;
         loggedLunarReadError = false;
         recomputeRuntimeFlags();
@@ -113,17 +116,25 @@ public final class ECTweaksApplier {
         LAST_KNOWN_EVENT.clear();
         EVENT_END_TIMES.clear();
         WEATHER_SNAPSHOTS.clear();
+        overworldDimSettings = null;
     }
 
-    private static void recomputeRuntimeFlags() {
+    public static void recomputeRuntimeFlags() {
         boolean any = false;
+        Set<ResourceKey<Level>> linked = new HashSet<>();
+        linked.add(Level.OVERWORLD);
         for (ECTweaksConfig.EventTweaks t : ECTweaksConfig.EVENTS.values()) {
             if (t.forceDespawnAfterEvent) {
                 any = true;
-                break;
+            }
+            for (String dimId : t.addedDimensions) {
+                ResourceLocation loc = ResourceLocation.tryParse(dimId.trim());
+                if (loc != null) linked.add(ResourceKey.create(Registries.DIMENSION, loc));
             }
         }
         anyForceDespawn = any;
+        OVERWORLD_LINKED_DIMS.clear();
+        OVERWORLD_LINKED_DIMS.addAll(linked);
     }
 
     private static boolean gameplayTweaksDisabled() {
@@ -297,7 +308,7 @@ public final class ECTweaksApplier {
         if (last == null) last = "";
         if (!last.equals(cur)) {
             if (!last.isEmpty()) {
-                EVENT_END_TIMES.put(last, sLevel.getGameTime());
+                EVENT_END_TIMES.computeIfAbsent(dimKey, k -> new ConcurrentHashMap<>()).put(last, sLevel.getGameTime());
                 onWeatherEventEnd(sLevel, dimKey, last);
             }
             if (!cur.isEmpty()) {
@@ -353,8 +364,27 @@ public final class ECTweaksApplier {
         return tweaks.mobCapMultiplier;
     }
 
+    private static void captureOverworldDimSettings(RegistryAccess registryAccess, ResourceKey<Registry<Object>> lunarDimSettingsKey) {
+        try {
+            Optional<Registry<Object>> reg = registryAccess.registry(lunarDimSettingsKey);
+            if (reg.isEmpty()) return;
+            ResourceLocation loc = ResourceLocation.tryParse("minecraft:overworld");
+            if (loc == null) return;
+            overworldDimSettings = reg.get().get(ResourceKey.create(lunarDimSettingsKey, loc));
+        } catch (Throwable t) {
+            overworldDimSettings = null;
+        }
+    }
+
+    public static boolean isOverworldLunarDimensionSettings(Object settings) {
+        Object captured = overworldDimSettings;
+        return captured == null || captured == settings;
+    }
+
     public static boolean activeEventForcesPrecipitation() {
-        for (String eventPath : LAST_KNOWN_EVENT.values()) {
+        for (Map.Entry<ResourceKey<Level>, String> e : LAST_KNOWN_EVENT.entrySet()) {
+            if (!OVERWORLD_LINKED_DIMS.contains(e.getKey())) continue;
+            String eventPath = e.getValue();
             if (eventPath == null || eventPath.isEmpty()) continue;
             ECTweaksConfig.EventTweaks tweaks = ECTweaksConfig.EVENTS.get(eventPath);
             if (tweaks == null) continue;
@@ -417,6 +447,8 @@ public final class ECTweaksApplier {
     }
 
     private static void forcedDespawnPass(ServerLevel sLevel, String currentEvent) {
+        Map<String, Long> endTimes = EVENT_END_TIMES.get(sLevel.dimension());
+        if (endTimes == null) return;
         long now = sLevel.getGameTime();
         for (Entity entity : sLevel.getAllEntities()) {
             if (!(entity instanceof Mob mob)) continue;
@@ -426,7 +458,7 @@ public final class ECTweaksApplier {
             if (mobEventId.equals(currentEvent)) continue;
             ECTweaksConfig.EventTweaks tweaks = ECTweaksConfig.EVENTS.get(mobEventId);
             if (tweaks == null || !tweaks.forceDespawnAfterEvent) continue;
-            Long endTime = EVENT_END_TIMES.get(mobEventId);
+            Long endTime = endTimes.get(mobEventId);
             if (endTime == null) continue;
             long delay = (long) tweaks.forceDespawnDelaySeconds * 20L;
             if (now - endTime >= delay) {
@@ -442,12 +474,13 @@ public final class ECTweaksApplier {
         }
 
         int extraRolls = (int) Math.floor(chanceMul - 1.0);
-        for (int i = 0; i < extraRolls; i++) {
-            if (!Services.PLATFORM.populateEquipment(mob, random, difficulty)) return;
+        boolean populated = true;
+        for (int i = 0; i < extraRolls && populated; i++) {
+            populated = Services.PLATFORM.populateEquipment(mob, random, difficulty);
         }
         double frac = (chanceMul - 1.0) - extraRolls;
-        if (frac > 0 && random.nextDouble() < frac) {
-            if (!Services.PLATFORM.populateEquipment(mob, random, difficulty)) return;
+        if (populated && frac > 0 && random.nextDouble() < frac) {
+            Services.PLATFORM.populateEquipment(mob, random, difficulty);
         }
 
         if (!dropGear) {
@@ -469,6 +502,8 @@ public final class ECTweaksApplier {
 
         boolean log = ECTweaksConfig.GENERAL.logTweaks;
         boolean visualOnly = ECTweaksConfig.GENERAL.eventsVisualOnly;
+
+        captureOverworldDimSettings(registryAccess, lunarDimSettingsKey);
 
         try {
             addDimensions(registryAccess, lunarEventKey, lunarDimSettingsKey, log);

@@ -81,7 +81,7 @@ public final class ForgeConfig {
                 if (h == null) continue;
                 h.chanceMultiplier = s.chanceMultiplier.get();
                 h.minNightsBetween = s.minNightsBetween.get();
-                h.validMoonPhases = copy(s.validMoonPhases.get());
+                h.validMoonPhases = ECTweaksConfig.toMoonPhaseStrings(s.validMoonPhases.get());
                 h.mobSpawnMultiplier = s.mobSpawnMultiplier.get();
                 h.mobCapMultiplier = s.mobCapMultiplier.get();
                 h.blockSleeping = s.blockSleeping.get();
@@ -121,6 +121,7 @@ public final class ForgeConfig {
                     h.cropDropTags = copy(s.cropDropTags.get());
                 }
             }
+            ECTweaksApplier.recomputeRuntimeFlags();
         }
 
         if (CLIENT_SPEC.isLoaded()) {
@@ -183,7 +184,7 @@ public final class ForgeConfig {
     static final class EventSpec {
         final ForgeConfigSpec.DoubleValue chanceMultiplier;
         final ForgeConfigSpec.IntValue minNightsBetween;
-        final ForgeConfigSpec.ConfigValue<List<? extends String>> validMoonPhases;
+        final ForgeConfigSpec.ConfigValue<List<? extends Object>> validMoonPhases;
         final ForgeConfigSpec.DoubleValue mobSpawnMultiplier;
         final ForgeConfigSpec.DoubleValue mobCapMultiplier;
         final ForgeConfigSpec.EnumValue<BoolOverride> blockSleeping;
@@ -226,8 +227,8 @@ public final class ForgeConfig {
                     .defineInRange("chance_multiplier", 1.0, 0.0, 1000.0);
             minNightsBetween = b.comment("Minimum nights between this event. -1 keeps default.")
                     .defineInRange("min_nights_between", -1, -1, Integer.MAX_VALUE);
-            validMoonPhases = b.comment("Moon phases (0-7) this event can occur on. Empty keeps default.")
-                    .defineList("valid_moon_phases", List.of(), o -> o instanceof String s && s.trim().matches("[0-7]"));
+            validMoonPhases = b.comment("Moon phases this event can occur on. 0 = full moon, 4 = new moon. Example: [0] or [0, 4]. Empty keeps default.")
+                    .defineListAllowEmpty("valid_moon_phases", List.of(), ECTweaksConfig::isMoonPhase);
             mobSpawnMultiplier = b.comment("Global multiplier applied to every mob category's spawn rate during this event, including categories set by mob_category_multipliers.")
                     .defineInRange("mob_spawn_multiplier", 1.0, 0.0, 1000.0);
             mobCapMultiplier = b.comment("Multiplier on the mob-spawn cap during this event. 1.0 = vanilla. -1 = no cap, mobs keep spawning.")
@@ -245,13 +246,13 @@ public final class ForgeConfig {
             restoreWeatherAfterEvent = b.comment("Allow vanilla weather to return after the event ends.")
                     .define("restore_weather_after_event", true);
             mobCategoryMultipliers = b.comment("Per-category spawn multipliers. Format: \"CATEGORY:value\"")
-                    .defineList("mob_category_multipliers", defaults.mobCategoryMultipliers(), o -> o instanceof String s && s.split(":").length == 2);
+                    .defineListAllowEmpty("mob_category_multipliers", defaults.mobCategoryMultipliers(), o -> o instanceof String s && s.split(":").length == 2);
             spawnAdditions = b.comment("Mobs to add during this event. Format: \"target;weight;min;max\". target = entity id, #entity_tag, or @modid (all of a mod's mobs).")
-                    .defineList("spawn_additions", List.of(), o -> o instanceof String s && s.split(";").length == 4);
+                    .defineListAllowEmpty("spawn_additions", List.of(), o -> o instanceof String s && s.split(";").length == 4);
             spawnRemovals = b.comment("Entities blocked from spawning during this event. Each entry = entity id, #entity_tag, or @modid.")
-                    .defineList("spawn_removals", List.of(), o -> o instanceof String);
+                    .defineListAllowEmpty("spawn_removals", List.of(), o -> o instanceof String);
             addedDimensions = b.comment("Dimensions to add this event to. Format: \"namespace:dimension_id\". Uses overworld settings as template.")
-                    .defineList("added_dimensions", List.of(), o -> o instanceof String);
+                    .defineListAllowEmpty("added_dimensions", List.of(), o -> o instanceof String);
             monsterSpawnLightLevel = b.comment("Maximum block light level monsters can spawn at during this event. 0 = vanilla.")
                     .defineInRange("monster_spawn_light_level", 0, 0, 15);
             mobGearChanceMultiplier = b.comment("Multiplier on the vanilla chance for monsters to spawn with gear (armor + weapons).")
@@ -281,7 +282,7 @@ public final class ForgeConfig {
             forceDespawnDelaySeconds = b.comment("Seconds after the event ends before forced despawn happens.")
                     .defineInRange("force_despawn_delay_seconds", 180, 0, Integer.MAX_VALUE);
             mobEffects = b.comment("Status effects applied while the event is active. Format: \"effect_id;amplifier;duration[;target]\"")
-                    .defineList("mob_effects", defaults.mobEffects(), o -> o instanceof String s && s.split(";").length >= 3);
+                    .defineListAllowEmpty("mob_effects", defaults.mobEffects(), o -> o instanceof String s && s.split(";").length >= 3);
             nightLengthTicks = b.comment("How many ticks the night lasts during this event (vanilla = 12000).")
                     .defineInRange("night_length_ticks", 12000L, 1L, Long.MAX_VALUE);
             moonColor = b.comment("Moon texture hex color. Empty = white.")
@@ -302,7 +303,7 @@ public final class ForgeConfig {
                 enableCropDropBoost = b.comment("Multiply drops for items in the configured tags while this event is active.")
                         .define("enable_crop_drop_boost", defaults.enableCropDropBoost());
                 cropDropTags = b.comment("Item tags to multiply drops for. Format: \"tag_id;multiplier\".")
-                        .defineList("crop_drop_tags", defaults.cropDropTags(), o -> o instanceof String s && s.split(";").length == 2);
+                        .defineListAllowEmpty("crop_drop_tags", defaults.cropDropTags(), o -> o instanceof String s && s.split(";").length == 2);
             } else {
                 enableCropDropBoost = null;
                 cropDropTags = null;

@@ -81,7 +81,7 @@ public final class NeoForgeConfig {
                 if (h == null) continue;
                 h.chanceMultiplier = s.chanceMultiplier.get();
                 h.minNightsBetween = s.minNightsBetween.get();
-                h.validMoonPhases = copy(s.validMoonPhases.get());
+                h.validMoonPhases = ECTweaksConfig.toMoonPhaseStrings(s.validMoonPhases.get());
                 h.mobSpawnMultiplier = s.mobSpawnMultiplier.get();
                 h.mobCapMultiplier = s.mobCapMultiplier.get();
                 h.blockSleeping = s.blockSleeping.get();
@@ -121,6 +121,7 @@ public final class NeoForgeConfig {
                     h.cropDropTags = copy(s.cropDropTags.get());
                 }
             }
+            ECTweaksApplier.recomputeRuntimeFlags();
         }
 
         if (CLIENT_SPEC.isLoaded()) {
@@ -183,7 +184,7 @@ public final class NeoForgeConfig {
     static final class EventSpec {
         final ModConfigSpec.DoubleValue chanceMultiplier;
         final ModConfigSpec.IntValue minNightsBetween;
-        final ModConfigSpec.ConfigValue<List<? extends String>> validMoonPhases;
+        final ModConfigSpec.ConfigValue<List<? extends Object>> validMoonPhases;
         final ModConfigSpec.DoubleValue mobSpawnMultiplier;
         final ModConfigSpec.DoubleValue mobCapMultiplier;
         final ModConfigSpec.EnumValue<BoolOverride> blockSleeping;
@@ -226,8 +227,8 @@ public final class NeoForgeConfig {
                     .defineInRange("chance_multiplier", 1.0, 0.0, 1000.0);
             minNightsBetween = b.comment("Minimum nights between this event. -1 keeps default.")
                     .defineInRange("min_nights_between", -1, -1, Integer.MAX_VALUE);
-            validMoonPhases = b.comment("Moon phases (0-7) this event can occur on. Empty keeps default.")
-                    .defineListAllowEmpty("valid_moon_phases", List.of(), o -> o instanceof String s && s.trim().matches("[0-7]"));
+            validMoonPhases = b.comment("Moon phases this event can occur on. 0 = full moon, 4 = new moon. Example: [0] or [0, 4]. Empty keeps default.")
+                    .defineListAllowEmpty("valid_moon_phases", List.of(), ECTweaksConfig::isMoonPhase);
             mobSpawnMultiplier = b.comment("Global multiplier applied to every mob category's spawn rate during this event, including categories set by mob_category_multipliers.")
                     .defineInRange("mob_spawn_multiplier", 1.0, 0.0, 1000.0);
             mobCapMultiplier = b.comment("Multiplier on the mob-spawn cap during this event. 1.0 = vanilla. -1 = no cap, mobs keep spawning.")

@@ -1,5 +1,6 @@
 package com.sxilverr.enhancedcelestialstweaks;
 
+import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
@@ -168,6 +169,26 @@ public final class ECTweaksConfig {
                 this.cropDropTags = null;
             }
         }
+    }
+
+    public static boolean isMoonPhase(Object o) {
+        if (o instanceof Number n) {
+            long v = n.longValue();
+            return v >= 0 && v <= 7;
+        }
+        return o instanceof String s && s.trim().matches("[0-7]");
+    }
+
+    public static List<String> toMoonPhaseStrings(List<?> in) {
+        List<String> out = new ArrayList<>(in.size());
+        for (Object o : in) {
+            if (o instanceof Number n) {
+                out.add(Long.toString(n.longValue()));
+            } else if (o != null) {
+                out.add(o.toString().trim());
+            }
+        }
+        return out;
     }
 
     private ECTweaksConfig() {

@@ -14,6 +14,7 @@ public class MixinLunarDimSettings {
     @Inject(method = "requiresClearSkies", at = @At("RETURN"), cancellable = true, remap = false)
     private void enhancedcelestialstweaks$skies(CallbackInfoReturnable<Boolean> cir) {
         if (!ECTweaksConfig.GENERAL.enabled) return;
+        if (!ECTweaksApplier.isOverworldLunarDimensionSettings(this)) return;
         BoolOverride o = ECTweaksConfig.OVERWORLD.requireClearSkies;
         if (o == BoolOverride.TRUE) cir.setReturnValue(Boolean.TRUE);
         else if (o == BoolOverride.FALSE) cir.setReturnValue(Boolean.FALSE);
@@ -23,6 +24,7 @@ public class MixinLunarDimSettings {
     @Inject(method = "dayLength", at = @At("RETURN"), cancellable = true, remap = false)
     private void enhancedcelestialstweaks$dayLength(CallbackInfoReturnable<Long> cir) {
         if (!ECTweaksConfig.GENERAL.enabled) return;
+        if (!ECTweaksApplier.isOverworldLunarDimensionSettings(this)) return;
         long val = ECTweaksConfig.OVERWORLD.dayLength;
         if (val >= 1) cir.setReturnValue(val);
     }
@@ -30,6 +32,7 @@ public class MixinLunarDimSettings {
     @Inject(method = "yearLengthInDays", at = @At("RETURN"), cancellable = true, remap = false)
     private void enhancedcelestialstweaks$yearLength(CallbackInfoReturnable<Long> cir) {
         if (!ECTweaksConfig.GENERAL.enabled) return;
+        if (!ECTweaksApplier.isOverworldLunarDimensionSettings(this)) return;
         long val = ECTweaksConfig.OVERWORLD.yearLengthInDays;
         if (val >= 1) cir.setReturnValue(val);
     }
@@ -37,6 +40,7 @@ public class MixinLunarDimSettings {
     @Inject(method = "minDaysBetweenEvents", at = @At("RETURN"), cancellable = true, remap = false)
     private void enhancedcelestialstweaks$minDays(CallbackInfoReturnable<Long> cir) {
         if (!ECTweaksConfig.GENERAL.enabled) return;
+        if (!ECTweaksApplier.isOverworldLunarDimensionSettings(this)) return;
         long val = ECTweaksConfig.OVERWORLD.minDaysBetweenEvents;
         if (val >= 0) cir.setReturnValue(val);
     }
@@ -44,6 +48,7 @@ public class MixinLunarDimSettings {
     @Inject(method = "maxDaysBetweenEvents", at = @At("RETURN"), cancellable = true, remap = false)
     private void enhancedcelestialstweaks$maxDays(CallbackInfoReturnable<Long> cir) {
         if (!ECTweaksConfig.GENERAL.enabled) return;
+        if (!ECTweaksApplier.isOverworldLunarDimensionSettings(this)) return;
         long val = ECTweaksConfig.OVERWORLD.maxDaysBetweenEvents;
         if (val >= 0) cir.setReturnValue(val);
     }
